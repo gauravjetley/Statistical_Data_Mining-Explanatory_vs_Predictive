@@ -573,6 +573,8 @@ summary(ilm.fit8) #R2 0.9383 Highest!!
 plot(ilm.fit8) #Ext. good !!!!
 AIC(ilm.fit8) #-710.6806 Lowest of Good fit Exponential models!
 BIC(ilm.fit8) #20.48689 Lowest!!!!
+library(car)
+influencePlot(ilm.fit8)
 
 #interaction Terms visualizations
 library(ggplot2)
@@ -603,23 +605,65 @@ tree.fit <- rpart(as.numeric(FARE)~as.factor(S_CODE)+as.factor(S_CITY)+as.factor
                     as.factor(SW)+as.numeric(HI)+as.numeric(S_INCOME)+as.numeric(E_INCOME)+
                     as.numeric(S_POP)+as.numeric(E_POP)+as.factor(SLOT)+as.factor(GATE)+
                     as.numeric(DISTANCE)+as.numeric(PAX),data=data)
+tree.fit
+summary(tree.fit)
 print(tree.fit)
 plot(tree.fit)
 text(tree.fit)
+library(rattle)
+library(rpart.plot)
+library(RColorBrewer)
+fancyRpartPlot(tree.fit)
 plotcp(tree.fit) # Cross-Validation plot
+
+
+
+tree.fit2 <- rpart(as.numeric(FARE)~as.factor(S_CODE)+as.factor(S_CITY)+as.factor(E_CODE)+
+                    as.factor(E_CITY)+as.numeric(COUPON)+as.factor(NEW)+as.factor(VACATION)+
+                    as.factor(SW)+as.numeric(HI)+as.numeric(S_INCOME)+as.numeric(E_INCOME)+
+                    as.numeric(S_POP)+as.numeric(E_POP)+as.factor(SLOT)+as.factor(GATE)+
+                    as.numeric(DISTANCE)+as.numeric(PAX),data=data, control=rpart.control(minsplit=30, maxdepth=4))
+
+
+fancyRpartPlot(tree.fit2)
+plot(tree.fit2)
+text(tree.fit2)
+#Looking for lowest cross validation errors
+printcp(tree.fit2)
+#Getting the lowest Complexity parameter for lowest Cross validation Error Rate
+tree.fit2$cptable[which.min(tree.fit2$cptable[,"xerror"]),"CP"]
+#looking at visualization of CP
+plotcp(tree.fit2)
+#Pruning Tree for minimum error rate
+tree.fit2.p <- prune(tree.fit2, cp = tree.fit2$cptable[which.min(tree.fit2$cptable[,"xerror"]),"CP"])
+#visualizing new tree
+fancyRpartPlot(tree.fit2.p, uniform=TRUE,main="Pruned Classification Tree")
+
+tree.fit
+summary(tree.fit)
+print(tree.fit)
+
+#More visualization
+library(party)					# Alternative decision tree algorithm
+library(partykit)				# Convert rpart object to BinaryTree
+library(caret)
+prp(tree.fit2.p)					# Will plot the tree
+prp(tree.fit2.p,varlen=3)
 
 
 ############################
 #Conditional Inference Tree
 library(party)
+
 ctree.fit <- ctree(as.numeric(FARE)~as.factor(S_CODE)+as.factor(S_CITY)+as.factor(E_CODE)+
                      as.factor(E_CITY)+as.numeric(COUPON)+as.factor(NEW)+as.factor(VACATION)+
                      as.factor(SW)+as.numeric(HI)+as.numeric(S_INCOME)+as.numeric(E_INCOME)+
                      as.numeric(S_POP)+as.numeric(E_POP)+as.factor(SLOT)+as.factor(GATE)+
-                     as.numeric(DISTANCE)+as.numeric(PAX),data=data, controls = ctree_control(mincriterion = 0.95,minsplit = 20,maxdepth = 5))
+                     as.numeric(DISTANCE)+as.numeric(PAX),data=data)
 plot(ctree.fit)
-
-
+summary(ctree.fit)
+ctree.fit
+print(ctree.fit)
 
 ##############################################################################################################
 ##############################################################################################################
@@ -629,7 +673,145 @@ plot(ctree.fit)
 #Predict Fare on a given route
 
 
-#
+###########
+#Regression
+#The mean squared error (MSE) is the mean of the square of the residuals:
+# Mean squared error
+mse <- mean(residuals(ilm.fit8)^2)
+mse
+
+#Root mean squared error (RMSE) is then the square root of MSE:
+# Root mean squared error
+rmse <- sqrt(mse)
+rmse
+
+#Residual sum of squares (RSS) is the sum of the squared residuals:
+# Residual sum of squares
+rss <- sum(residuals(ilm.fit8)^2)
+rss
+
+#Residual standard error (RSE) is the square root of (RSS / degrees of freedom):
+# Residual standard error
+rse <- sqrt( sum(residuals(ilm.fit8)^2) / ilm.fit8$df.residual ) 
+rse
+
+#Making a Training set Index
+train <- sample.int(n = nrow(data), 600)
+
+new.ilm.fit8 <-  lm(as.numeric(log(FARE)) ~ as.factor(S_CITY) + as.factor(E_CITY) + 
+                    log(as.numeric(COUPON)) + as.factor(NEW) + log(as.numeric(HI)) + 
+                    as.numeric(DISTANCE) + as.numeric(PAX) + as.numeric(DISTANCE):PAX + 
+                    PAX:as.numeric(HI) + as.numeric(HI):VACATION + COUPON:as.numeric(SW) + 
+                    VACATION:as.numeric(SW) + as.numeric(SW):DISTANCE + S_CITY:as.numeric(VACATION) + 
+                    COUPON:as.numeric(VACATION) + PAX:as.numeric(VACATION) + 
+                    HI:as.numeric(NEW) + HI:as.numeric(COUPON),
+                  data = data[train,])
+
+pred.new.ilm.fit8 <- predict(new.ilm.fit8, newdata=data[-train, ])
+pred.new.ilm.fit8
+
+#combining original data and prediction data in dataframe
+test <- data.frame(actual=log(data$FARE[-train]), pred.new.ilm.fit8)
+test$error <- with(test, pred.new.ilm.fit8-actual)
+test
+
+#Computing new statistics and Comparing to Exploratory Model
+# Mean squared error
+test.mse <- with(test, mean(error^2))
+test.mse
+mse
+#Root mean squared error (RMSE) is then the square root of MSE:
+# Root mean squared error
+test.rmse <- sqrt(test.mse)
+test.rmse
+rmse
+#Residual sum of squares (RSS) is the sum of the squared residuals:
+# Residual sum of squares
+test.rss <- sum(test.mse^2)
+test.rss
+rss
+
+
+#################################
+#Decision Tree
+install.packages("tree")
+library(tree)
+summary(tree(as.numeric(FARE)~as.factor(S_CODE)+as.factor(S_CITY)+as.factor(E_CODE)+
+               as.factor(E_CITY)+as.numeric(COUPON)+as.factor(NEW)+as.factor(VACATION)+
+               as.factor(SW)+as.numeric(HI)+as.numeric(S_INCOME)+as.numeric(E_INCOME)+
+               as.numeric(S_POP)+as.numeric(E_POP)+as.factor(SLOT)+as.factor(GATE)+as.numeric(DISTANCE)+as.numeric(PAX) ,data=data))
+# Cannot cross-validate as we have more than 32 levels in 2 variables
+
+## Using different method
+#Making a Training set Index
+train.80 <- sample.int(n = nrow(data), 510)
+library(rpart)
+new.tree.fit2 <- rpart(as.numeric(FARE)~as.factor(S_CODE)+as.factor(S_CITY)+as.factor(E_CODE)+
+                     as.factor(E_CITY)+as.numeric(COUPON)+as.factor(NEW)+as.factor(VACATION)+
+                     as.factor(SW)+as.numeric(HI)+as.numeric(S_INCOME)+as.numeric(E_INCOME)+
+                     as.numeric(S_POP)+as.numeric(E_POP)+as.factor(SLOT)+as.factor(GATE)+
+                     as.numeric(DISTANCE)+as.numeric(PAX),data=data[train.80,], control=rpart.control(minsplit=30, maxdepth=4))
+
+
+pred.new.tree.fit2 <- predict(new.tree.fit2, newdata=data[-train.80, ])
+pred.new.tree.fit2
+
+#combining original data and prediction data in dataframe
+tree.test <- data.frame(actual=data$FARE[-train.80], pred.new.tree.fit2)
+tree.test$error <- with(tree.test, pred.new.tree.fit2-actual)
+tree.test
+
+tree.test.log <- data.frame(actual=data$FARE[-train.80], pred.new.tree.fit2)
+
+tree.test.log$error <- with(tree.test, log(pred.new.tree.fit2)-log(actual))
+tree.test.log
+
+#Computing new statistics and Comparing to Exploratory Model
+# Mean squared error
+tree.test.mse <- with(tree.test.log, mean(error^2))
+tree.test.mse
+
+#Root mean squared error (RMSE) is then the square root of MSE:
+# Root mean squared error
+tree.test.rmse <- sqrt(tree.test.mse)
+tree.test.rmse
+
+
+
+#########################################################
+#Random Forest
+library(randomForest)
+#Making a Training set Index
+train.80 <- sample.int(n = nrow(data), 510)
+
+
+rforest.fit <- randomForest(as.numeric(FARE)~S_CODE+E_CODE+COUPON+NEW+VACATION+
+                              SW+HI+S_INCOME+E_INCOME+
+                              S_POP+E_POP+SLOT+GATE+
+                              DISTANCE+PAX,data=data[train.80,], importance=TRUE, ntree=2000)
+
+
+pred.rforest.fit <- predict(rforest.fit, newdata=data[-train.80, ])
+pred.rforest.fit
+
+#combining original data and prediction data in dataframe
+rforest.test <- data.frame(actual=data$FARE[-train.80], pred.rforest.fit)
+rforest.test$error <- with(rforest.test, pred.rforest.fit-actual)
+rforest.test
+
+rforest.test.log <- data.frame(actual=data$FARE[-train.80], pred.rforest.fit)
+rforest.test.log$error <- with(rforest.test, log(pred.rforest.fit)-log(actual))
+rforest.test.log
+
+#Computing new statistics and Comparing to Exploratory Model
+# Mean squared error
+rforest.test.mse <- with(rforest.test.log, mean(error^2))
+rforest.test.mse
+
+#Root mean squared error (RMSE) is then the square root of MSE:
+# Root mean squared error
+rforest.test.rmse <- sqrt(rforest.test.mse)
+rforest.test.rmse
 
 
 
